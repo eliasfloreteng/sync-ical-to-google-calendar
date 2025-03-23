@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, getDocs, addDoc, query, where, Firestore } from 'firebase/firestore';
+import { getFirestore, collection, getDocs, addDoc, query, where, Firestore, DocumentData } from 'firebase/firestore';
 import * as ical from 'ical';
 
 interface CalendarEvent {
@@ -9,6 +9,15 @@ interface CalendarEvent {
 	location?: string;
 	start: Date;
 	end: Date;
+	userId?: string; // Add userId to track which user the event belongs to
+}
+
+interface UserConfig {
+	userId: string;
+	icalUrl: string;
+	googleCalendarId: string;
+	googleRefreshToken: string;
+	enabled: boolean;
 }
 
 export default {
@@ -31,31 +40,19 @@ export default {
 				const app = initializeApp(firebaseConfig);
 				const db = getFirestore(app);
 
-				// Public iCal URL - this could be stored in environment variables or Firestore
-				const icalUrl = env.ICAL_URL;
+				// Get all users from Firestore
+				const users = await getUserConfigs(db);
+				console.log(`Found ${users.length} users with calendar sync configurations`);
 
-				// Fetch and parse iCal events
-				const icalEvents = await fetchIcalEvents(icalUrl);
-				console.log(`Fetched ${Object.keys(icalEvents).length} events from iCal`);
-
-				// Get existing events from Firestore
-				const existingEvents = await getExistingEvents(db);
-				console.log(`Found ${existingEvents.length} existing events in Firestore`);
-
-				// Find new events
-				const newEvents = findNewEvents(icalEvents, existingEvents);
-				console.log(`Found ${newEvents.length} new events to sync`);
-
-				if (newEvents.length > 0) {
-					// Add new events to Google Calendar
-					// Process events serially to avoid race conditions
-					for (const event of newEvents) {
-						await addEventToGoogleCalendar(event, env);
-						await storeEventInFirestore(db, event);
+				// Process each user's calendars
+				for (const userConfig of users) {
+					if (!userConfig.enabled) {
+						console.log(`Skipping disabled user ${userConfig.userId}`);
+						continue;
 					}
-					console.log(`Successfully synced ${newEvents.length} events to Google Calendar`);
-				} else {
-					console.log('No new events to sync');
+
+					console.log(`Processing calendar sync for user ${userConfig.userId}`);
+					await processUserCalendar(db, userConfig, env);
 				}
 			} catch (error) {
 				console.error('Error syncing calendars:', error);
@@ -68,6 +65,63 @@ export default {
 } satisfies ExportedHandler<Env>;
 
 /**
+ * Retrieves all user configurations from Firestore
+ */
+async function getUserConfigs(db: Firestore): Promise<UserConfig[]> {
+	const usersCollection = collection(db, 'users');
+	const snapshot = await getDocs(usersCollection);
+
+	return snapshot.docs.map((doc) => {
+		const data = doc.data();
+		return {
+			userId: doc.id,
+			icalUrl: data.icalUrl,
+			googleCalendarId: data.googleCalendarId,
+			googleRefreshToken: data.googleRefreshToken,
+			enabled: data.enabled !== false, // default to true if not specified
+		};
+	});
+}
+
+/**
+ * Process calendar sync for a single user
+ */
+async function processUserCalendar(db: Firestore, userConfig: UserConfig, env: Env): Promise<void> {
+	try {
+		// Fetch and parse iCal events
+		const icalEvents = await fetchIcalEvents(userConfig.icalUrl);
+		console.log(`Fetched ${Object.keys(icalEvents).length} events from iCal for user ${userConfig.userId}`);
+
+		// Get existing events from Firestore for this user
+		const existingEvents = await getExistingEvents(db, userConfig.userId);
+		console.log(`Found ${existingEvents.length} existing events in Firestore for user ${userConfig.userId}`);
+
+		// Find new events
+		const newEvents = findNewEvents(icalEvents, existingEvents);
+		console.log(`Found ${newEvents.length} new events to sync for user ${userConfig.userId}`);
+
+		if (newEvents.length > 0) {
+			// Process events serially to avoid race conditions
+			for (const event of newEvents) {
+				// Add user ID to the event
+				event.userId = userConfig.userId;
+
+				// Add event to Google Calendar
+				await addEventToGoogleCalendar(event, userConfig, env);
+
+				// Store event in Firestore
+				await storeEventInFirestore(db, event);
+			}
+			console.log(`Successfully synced ${newEvents.length} events to Google Calendar for user ${userConfig.userId}`);
+		} else {
+			console.log(`No new events to sync for user ${userConfig.userId}`);
+		}
+	} catch (error) {
+		console.error(`Error processing calendar for user ${userConfig.userId}:`, error);
+	}
+}
+
+/**
  * Fetches and parses events from an iCal URL
  */
 async function fetchIcalEvents(url: string): Promise<Record<string, ical.CalendarComponent>> {
@@ -77,11 +131,12 @@ async function fetchIcalEvents(url: string): Promise<Record<string, ical.Calenda
 }
 
 /**
- * Retrieves existing events from Firestore
+ * Retrieves existing events from Firestore for a specific user
  */
-async function getExistingEvents(db: Firestore): Promise<CalendarEvent[]> {
+async function getExistingEvents(db: Firestore, userId: string): Promise<CalendarEvent[]> {
 	const eventsCollection = collection(db, 'syncedEvents');
-	const snapshot = await getDocs(eventsCollection);
+	const q = query(eventsCollection, where('userId', '==', userId));
+	const snapshot = await getDocs(q);
 
 	return snapshot.docs.map((doc) => {
 		const data = doc.data();
@@ -92,6 +147,7 @@ async function getExistingEvents(db: Firestore): Promise<CalendarEvent[]> {
 			location: data.location,
 			start: data.start.toDate(),
 			end: data.end.toDate(),
+			userId: data.userId,
 		};
 	});
 }
@@ -127,14 +183,14 @@ function findNewEvents(icalEvents: Record<string, ical.CalendarComponent>, exist
 }
 
 /**
- * Gets an access token using the refresh token
+ * Gets an access token using the user's refresh token
  */
-async function getAccessToken(env: Env): Promise<string> {
+async function getAccessToken(userConfig: UserConfig, env: Env): Promise<string> {
 	const tokenUrl = 'https://oauth2.googleapis.com/token';
 	const params = new URLSearchParams({
 		client_id: env.GOOGLE_CLIENT_ID,
 		client_secret: env.GOOGLE_CLIENT_SECRET,
-		refresh_token: env.GOOGLE_REFRESH_TOKEN,
+		refresh_token: userConfig.googleRefreshToken,
 		grant_type: 'refresh_token',
 	});
 
@@ -164,11 +220,11 @@ async function getAccessToken(env: Env): Promise<string> {
 /**
  * Adds an event to Google Calendar using the Calendar API
  */
-async function addEventToGoogleCalendar(event: CalendarEvent, env: Env): Promise<void> {
-	const calendarId = env.GOOGLE_CALENDAR_ID;
+async function addEventToGoogleCalendar(event: CalendarEvent, userConfig: UserConfig, env: Env): Promise<void> {
+	const calendarId = userConfig.googleCalendarId;
 
-	// Get access token using refresh token
-	const accessToken = await getAccessToken(env);
+	// Get access token using user's refresh token
+	const accessToken = await getAccessToken(userConfig, env);
 
 	// Format the event for Google Calendar API
 	const googleEvent = {
@@ -209,8 +265,8 @@ async function addEventToGoogleCalendar(event: CalendarEvent, env: Env): Promise
 async function storeEventInFirestore(db: Firestore, event: CalendarEvent): Promise<void> {
 	const eventsCollection = collection(db, 'syncedEvents');
 
-	// Check if event already exists
-	const q = query(eventsCollection, where('uid', '==', event.uid));
+	// Check if event already exists for this user
+	const q = query(eventsCollection, where('uid', '==', event.uid), where('userId', '==', event.userId));
 	const querySnapshot = await getDocs(q);
 
 	if (querySnapshot.empty) {
@@ -222,11 +278,12 @@ async function storeEventInFirestore(db: Firestore, event: CalendarEvent): Promi
 			location: event.location || '',
 			start: event.start,
 			end: event.end,
+			userId: event.userId,
 			syncedAt: new Date(),
 		});
 
-		console.log(`Stored event "${event.summary}" in Firestore`);
+		console.log(`Stored event "${event.summary}" in Firestore for user ${event.userId}`);
 	} else {
-		console.log(`Event "${event.summary}" already exists in Firestore`);
+		console.log(`Event "${event.summary}" already exists in Firestore for user ${event.userId}`);
 	}
 }
