@@ -1,0 +1,25 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Match the 'users' collection
+    // Since we're not using Firebase Auth, we'll rely on application-level security
+    match /users/{userId} {
+      // Allow all operations for now, since auth is handled in the Cloudflare Worker
+      // Security is enforced by the Worker middleware before database operations
+      allow read, write: if true;
+    }
+
+    // Match the 'syncedEvents' collection 
+    match /syncedEvents/{document} {
+      // Allow operations on synced events
+      // Security is enforced by the Worker middleware
+      allow read, write: if true;
+    }
+
+    // Default deny for any other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

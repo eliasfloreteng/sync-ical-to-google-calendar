@@ -90,6 +90,15 @@ export default {
 				});
 			}
 
+			// Serve HTML page for the root route
+			if (url.pathname === '/' || url.pathname === '') {
+				return new Response(getIndexHtml(), {
+					headers: {
+						'Content-Type': 'text/html',
+					},
+				});
+			}
+
 			// Handle Google OAuth callback
 			if (url.pathname === '/auth/google/callback') {
 				return handleGoogleCallback(request, env, db);
@@ -269,7 +278,7 @@ async function handleGoogleCallback(request: Request, env: Env, db: Firestore): 
 		}
 
 		// Redirect to frontend with access token and ID token
-		const frontendUrl = new URL('https://your-frontend-app.com/auth/callback');
+		const frontendUrl = new URL(request.url);
 		frontendUrl.searchParams.append('access_token', tokenData.access_token);
 		frontendUrl.searchParams.append('id_token', tokenData.id_token);
 		return Response.redirect(frontendUrl.toString(), 302);
@@ -674,4 +683,590 @@ async function storeEventInFirestore(db: Firestore, event: CalendarEvent): Promi
 	} else {
 		console.log(`Event "${event.summary}" already exists in Firestore for user ${event.userId}`);
 	}
+}
+
+/**
+ * Returns the HTML content for the index page
+ */
+function getIndexHtml(): string {
+	return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iCal to Google Calendar Sync</title>
+    <style>
+        :root {
+            --primary-color: #4285F4;
+            --secondary-color: #34A853;
+            --accent-color: #EA4335;
+            --light-gray: #f8f9fa;
+            --dark-gray: #202124;
+        }
+        
+        body {
+            font-family: 'Roboto', Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            color: #333;
+            background-color: var(--light-gray);
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+        }
+        
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+        
+        .hero {
+            background-color: white;
+            border-radius: 8px;
+            padding: 3rem;
+            margin-bottom: 2rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        h1 {
+            color: var(--dark-gray);
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .subtitle {
+            color: #5f6368;
+            font-size: 1.25rem;
+            margin-bottom: 2rem;
+        }
+        
+        .btn {
+            display: inline-block;
+            background-color: var(--primary-color);
+            color: white;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: background-color 0.3s;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .btn:hover {
+            background-color: #3367D6;
+        }
+        
+        .btn-google {
+            background-color: white;
+            color: #757575;
+            border: 1px solid #dadce0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 24px;
+        }
+        
+        .btn-google:hover {
+            background-color: #f8f9fa;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+        
+        .btn-google img {
+            margin-right: 10px;
+            width: 18px;
+            height: 18px;
+        }
+        
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 3rem;
+        }
+        
+        .feature-card {
+            background-color: white;
+            border-radius: 8px;
+            padding: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        
+        .feature-icon {
+            font-size: 2rem;
+            color: var(--primary-color);
+            margin-bottom: 1rem;
+        }
+        
+        .feature-title {
+            font-size: 1.25rem;
+            font-weight: 500;
+            margin-bottom: 1rem;
+            color: var(--dark-gray);
+        }
+        
+        footer {
+            background-color: var(--dark-gray);
+            color: white;
+            padding: 2rem 0;
+            margin-top: 3rem;
+        }
+        
+        .dashboard {
+            display: none;
+            background-color: white;
+            border-radius: 8px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        
+        input[type="text"], input[type="url"] {
+            width: 100%;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #dadce0;
+            font-size: 16px;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        
+        .status-dot.active {
+            background-color: var(--secondary-color);
+        }
+        
+        .status-dot.inactive {
+            background-color: var(--accent-color);
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top: 4px solid var(--primary-color);
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error-message {
+            color: var(--accent-color);
+            background-color: rgba(234, 67, 53, 0.1);
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            display: none;
+        }
+        
+        .success-message {
+            color: var(--secondary-color);
+            background-color: rgba(52, 168, 83, 0.1);
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container header-content">
+            <div class="logo">iCal Sync</div>
+            <div id="user-info" style="display: none;">
+                <span id="user-email"></span>
+                <button id="logout-btn" class="btn" style="background-color: #EA4335;">Logout</button>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div id="login-section" class="hero">
+            <h1>Sync Your iCal to Google Calendar</h1>
+            <p class="subtitle">Automatically sync events from any iCal feed to your Google Calendar</p>
+            <button id="login-btn" class="btn btn-google">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" alt="Google Logo">
+                Sign in with Google
+            </button>
+        </div>
+
+        <div id="dashboard" class="dashboard">
+            <div class="dashboard-header">
+                <h2>Your Sync Dashboard</h2>
+                <div class="status-indicator">
+                    <div id="status-dot" class="status-dot inactive"></div>
+                    <span id="status-text">Inactive</span>
+                </div>
+            </div>
+
+            <div id="error-message" class="error-message"></div>
+            <div id="success-message" class="success-message"></div>
+
+            <form id="sync-form">
+                <div class="form-group">
+                    <label for="ical-url">iCal URL</label>
+                    <input type="url" id="ical-url" name="icalUrl" placeholder="https://example.com/calendar.ics" required>
+                </div>
+                <div class="form-group">
+                    <label for="google-calendar-id">Google Calendar ID</label>
+                    <input type="text" id="google-calendar-id" name="googleCalendarId" placeholder="primary or calendar ID" required>
+                    <small style="display: block; margin-top: 5px; color: #5f6368;">
+                        Use 'primary' for your main calendar, or find the calendar ID in your Google Calendar settings
+                    </small>
+                </div>
+                <div class="form-group">
+                    <button type="submit" id="save-btn" class="btn">Save Configuration</button>
+                    <button type="button" id="delete-btn" class="btn" style="background-color: #EA4335;">Delete Configuration</button>
+                </div>
+            </form>
+        </div>
+
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            <p>Loading your information...</p>
+        </div>
+
+        <div class="features">
+            <div class="feature-card">
+                <div class="feature-icon">🔄</div>
+                <h3 class="feature-title">Automatic Syncing</h3>
+                <p>Events automatically sync from your iCal feed to Google Calendar daily</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3 class="feature-title">Secure Authentication</h3>
+                <p>Uses Google's secure OAuth 2.0 for authentication and calendar access</p>
+            </div>
+            <div class="feature-card">
+                <div class="feature-icon">⚙️</div>
+                <h3 class="feature-title">Easy Setup</h3>
+                <p>Just paste your iCal URL, choose a calendar, and you're ready to go</p>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2023 iCal Sync Service. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const loginBtn = document.getElementById('login-btn');
+            const logoutBtn = document.getElementById('logout-btn');
+            const loginSection = document.getElementById('login-section');
+            const dashboard = document.getElementById('dashboard');
+            const userInfo = document.getElementById('user-info');
+            const userEmail = document.getElementById('user-email');
+            const loading = document.getElementById('loading');
+            const statusDot = document.getElementById('status-dot');
+            const statusText = document.getElementById('status-text');
+            const syncForm = document.getElementById('sync-form');
+            const deleteBtn = document.getElementById('delete-btn');
+            const errorMessage = document.getElementById('error-message');
+            const successMessage = document.getElementById('success-message');
+            
+            // Check if user is logged in
+            const checkAuth = () => {
+                const token = localStorage.getItem('id_token');
+                if (token) {
+                    return true;
+                }
+                return false;
+            };
+            
+            // Show loading state
+            const showLoading = () => {
+                loading.style.display = 'block';
+                loginSection.style.display = 'none';
+                dashboard.style.display = 'none';
+            };
+            
+            // Hide loading state
+            const hideLoading = () => {
+                loading.style.display = 'none';
+            };
+            
+            // Show error message
+            const showError = (message) => {
+                errorMessage.textContent = message;
+                errorMessage.style.display = 'block';
+                setTimeout(() => {
+                    errorMessage.style.display = 'none';
+                }, 5000);
+            };
+            
+            // Show success message
+            const showSuccess = (message) => {
+                successMessage.textContent = message;
+                successMessage.style.display = 'block';
+                setTimeout(() => {
+                    successMessage.style.display = 'none';
+                }, 5000);
+            };
+            
+            // Get user status from API
+            const getUserStatus = async () => {
+                const token = localStorage.getItem('id_token');
+                if (!token) return;
+                
+                try {
+                    const response = await fetch('/api/user/status', {
+                        headers: {
+                            'Authorization': 'Bearer ' + token
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        if (response.status === 401) {
+                            // Token is invalid or expired
+                            localStorage.removeItem('id_token');
+                            localStorage.removeItem('access_token');
+                            showLoginUI();
+                            return;
+                        }
+                        throw new Error('Failed to get user status');
+                    }
+                    
+                    const data = await response.json();
+                    
+                    if (data.registered) {
+                        // User is registered, show dashboard with data
+                        document.getElementById('ical-url').value = data.icalUrl || '';
+                        document.getElementById('google-calendar-id').value = data.googleCalendarId || '';
+                        userEmail.textContent = data.email;
+                        
+                        if (data.enabled) {
+                            statusDot.classList.remove('inactive');
+                            statusDot.classList.add('active');
+                            statusText.textContent = 'Active';
+                        } else {
+                            statusDot.classList.remove('active');
+                            statusDot.classList.add('inactive');
+                            statusText.textContent = 'Inactive';
+                        }
+                        
+                        showDashboardUI();
+                    } else {
+                        // User authenticated but not fully registered
+                        userEmail.textContent = 'New User';
+                        showDashboardUI();
+                    }
+                } catch (error) {
+                    console.error('Error fetching user status:', error);
+                    showError('Failed to load your information. Please try again.');
+                    showLoginUI();
+                }
+            };
+            
+            // Show login UI
+            const showLoginUI = () => {
+                loginSection.style.display = 'block';
+                dashboard.style.display = 'none';
+                userInfo.style.display = 'none';
+                hideLoading();
+            };
+            
+            // Show dashboard UI
+            const showDashboardUI = () => {
+                loginSection.style.display = 'none';
+                dashboard.style.display = 'block';
+                userInfo.style.display = 'flex';
+                hideLoading();
+            };
+            
+            // Initialize the UI based on auth state
+            const initializeUI = () => {
+                showLoading();
+                if (checkAuth()) {
+                    getUserStatus();
+                } else {
+                    showLoginUI();
+                }
+            };
+            
+            // Handle login button click
+            loginBtn.addEventListener('click', () => {
+                window.location.href = '/auth/google';
+            });
+            
+            // Handle logout button click
+            logoutBtn.addEventListener('click', () => {
+                localStorage.removeItem('id_token');
+                localStorage.removeItem('access_token');
+                showLoginUI();
+            });
+            
+            // Handle form submission
+            syncForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                showLoading();
+                
+                const token = localStorage.getItem('id_token');
+                if (!token) {
+                    showLoginUI();
+                    return;
+                }
+                
+                const formData = new FormData(syncForm);
+                const data = {
+                    icalUrl: formData.get('icalUrl'),
+                    googleCalendarId: formData.get('googleCalendarId')
+                };
+                
+                try {
+                    const response = await fetch('/api/user/register', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': 'Bearer ' + token,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(data)
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to save configuration');
+                    }
+                    
+                    showSuccess('Configuration saved successfully!');
+                    getUserStatus(); // Refresh the UI with updated data
+                } catch (error) {
+                    console.error('Error saving configuration:', error);
+                    hideLoading();
+                    showError('Failed to save configuration. Please try again.');
+                }
+            });
+            
+            // Handle delete button click
+            deleteBtn.addEventListener('click', async () => {
+                if (!confirm('Are you sure you want to delete your configuration? This will stop all future syncing.')) {
+                    return;
+                }
+                
+                showLoading();
+                
+                const token = localStorage.getItem('id_token');
+                if (!token) {
+                    showLoginUI();
+                    return;
+                }
+                
+                try {
+                    const response = await fetch('/api/user/delete', {
+                        method: 'DELETE',
+                        headers: {
+                            'Authorization': 'Bearer ' + token
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to delete configuration');
+                    }
+                    
+                    showSuccess('Configuration deleted successfully!');
+                    // Reset form
+                    syncForm.reset();
+                    statusDot.classList.remove('active');
+                    statusDot.classList.add('inactive');
+                    statusText.textContent = 'Inactive';
+                    hideLoading();
+                } catch (error) {
+                    console.error('Error deleting configuration:', error);
+                    hideLoading();
+                    showError('Failed to delete configuration. Please try again.');
+                }
+            });
+            
+            // Check for authentication callback
+            const urlParams = new URLSearchParams(window.location.search);
+            const accessToken = urlParams.get('access_token');
+            const idToken = urlParams.get('id_token');
+            
+            if (accessToken && idToken) {
+                // Store tokens
+                localStorage.setItem('access_token', accessToken);
+                localStorage.setItem('id_token', idToken);
+                
+                // Remove query parameters from URL
+                const url = new URL(window.location.href);
+                url.search = '';
+                window.history.replaceState({}, document.title, url.toString());
+                
+                // Initialize UI
+                initializeUI();
+            } else {
+                // Normal initialization
+                initializeUI();
+            }
+        });
+    </script>
+</body>
+</html>
+	`;
 }
