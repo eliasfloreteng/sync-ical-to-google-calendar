@@ -6,14 +6,13 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "ical-sync-worker",
 	"main": "src/index.ts",
+	"compatibility_flags": ["nodejs_compat"],
 	"compatibility_date": "2025-03-21",
 	"observability": {
 		"enabled": true
 	},
 	"triggers": {
-		"crons": [
-			"* * * * *"
-		]
+		"crons": ["*/5 * * * *"]
 	}
 	/**
 	 * Smart Placement
