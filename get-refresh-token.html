@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Google Calendar API OAuth 2.0 Setup</title>
+		<style>
+			body {
+				font-family: Arial, sans-serif;
+				line-height: 1.6;
+				max-width: 800px;
+				margin: 0 auto;
+				padding: 20px;
+			}
+			h1 {
+				color: #4285f4;
+			}
+			.instructions {
+				background-color: #f8f9fa;
+				padding: 20px;
+				border-radius: 5px;
+				margin-bottom: 20px;
+			}
+			.step {
+				margin-bottom: 15px;
+			}
+			.form-group {
+				margin-bottom: 15px;
+			}
+			label {
+				display: block;
+				margin-bottom: 5px;
+				font-weight: bold;
+			}
+			input[type='text'] {
+				width: 100%;
+				padding: 8px;
+				border: 1px solid #ddd;
+				border-radius: 4px;
+			}
+			button {
+				background-color: #4285f4;
+				color: white;
+				border: none;
+				padding: 10px 15px;
+				border-radius: 4px;
+				cursor: pointer;
+			}
+			button:hover {
+				background-color: #3367d6;
+			}
+			.result {
+				margin-top: 20px;
+				display: none;
+			}
+			.token-display {
+				background-color: #f8f9fa;
+				padding: 15px;
+				border-radius: 4px;
+				word-break: break-all;
+				font-family: monospace;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>Google Calendar API OAuth 2.0 Setup</h1>
+
+		<div class="instructions">
+			<h2>Instructions</h2>
+			<div class="step">
+				<strong>Step 1:</strong> Go to the <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a>
+			</div>
+			<div class="step"><strong>Step 2:</strong> Create a new project or select an existing one</div>
+			<div class="step">
+				<strong>Step 3:</strong> Enable the Google Calendar API:
+				<ul>
+					<li>Go to "APIs & Services" > "Library"</li>
+					<li>Search for "Google Calendar API" and enable it</li>
+				</ul>
+			</div>
+			<div class="step">
+				<strong>Step 4:</strong> Create OAuth 2.0 credentials:
+				<ul>
+					<li>Go to "APIs & Services" > "Credentials"</li>
+					<li>Click "Create Credentials" > "OAuth client ID"</li>
+					<li>Select "Web application" as the application type</li>
+					<li>Add "http://localhost:8000" as an authorized JavaScript origin</li>
+					<li>Add "http://localhost:8000/get-refresh-token.html" as an authorized redirect URI</li>
+					<li>Click "Create" and note your Client ID and Client Secret</li>
+				</ul>
+			</div>
+		</div>
+
+		<div id="setup-form">
+			<h2>Get Refresh Token</h2>
+			<div class="form-group">
+				<label for="client-id">Client ID:</label>
+				<input type="text" id="client-id" placeholder="Enter your Client ID" />
+			</div>
+			<div class="form-group">
+				<label for="client-secret">Client Secret:</label>
+				<input type="text" id="client-secret" placeholder="Enter your Client Secret" />
+			</div>
+			<button id="authorize-button">Authorize</button>
+		</div>
+
+		<div id="result" class="result">
+			<h2>OAuth 2.0 Credentials</h2>
+			<div class="form-group">
+				<label>Client ID:</label>
+				<div id="result-client-id" class="token-display"></div>
+			</div>
+			<div class="form-group">
+				<label>Client Secret:</label>
+				<div id="result-client-secret" class="token-display"></div>
+			</div>
+			<div class="form-group">
+				<label>Refresh Token:</label>
+				<div id="result-refresh-token" class="token-display"></div>
+			</div>
+			<div class="form-group">
+				<p>Add these values to your <code>.dev.vars</code> file:</p>
+				<pre id="dev-vars-content" class="token-display"></pre>
+			</div>
+		</div>
+
+		<script>
+			// Parse URL parameters
+			function getUrlParams() {
+				const params = {};
+				const queryString = window.location.search.substring(1);
+				const pairs = queryString.split('&');
+
+				for (const pair of pairs) {
+					const [key, value] = pair.split('=');
+					if (key && value) {
+						params[decodeURIComponent(key)] = decodeURIComponent(value);
+					}
+				}
+
+				return params;
+			}
+
+			// Handle the OAuth flow
+			document.getElementById('authorize-button').addEventListener('click', function () {
+				const clientId = document.getElementById('client-id').value.trim();
+				const clientSecret = document.getElementById('client-secret').value.trim();
+
+				if (!clientId || !clientSecret) {
+					alert('Please enter both Client ID and Client Secret');
+					return;
+				}
+
+				// Store client ID and secret in localStorage for the callback
+				localStorage.setItem('clientId', clientId);
+				localStorage.setItem('clientSecret', clientSecret);
+
+				// Construct the authorization URL
+				const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+				authUrl.searchParams.append('client_id', clientId);
+				authUrl.searchParams.append('redirect_uri', 'http://localhost:8000/get-refresh-token.html');
+				authUrl.searchParams.append('response_type', 'code');
+				authUrl.searchParams.append('scope', 'https://www.googleapis.com/auth/calendar');
+				authUrl.searchParams.append('access_type', 'offline');
+				authUrl.searchParams.append('prompt', 'consent');
+
+				// Redirect to Google's authorization page
+				window.location.href = authUrl.toString();
+			});
+
+			// Handle the callback with authorization code
+			window.addEventListener('load', async function () {
+				const params = getUrlParams();
+
+				if (params.code) {
+					const clientId = localStorage.getItem('clientId');
+					const clientSecret = localStorage.getItem('clientSecret');
+
+					if (!clientId || !clientSecret) {
+						alert('Client ID or Client Secret not found. Please try again.');
+						return;
+					}
+
+					try {
+						// Exchange the authorization code for tokens
+						const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/x-www-form-urlencoded',
+							},
+							body: new URLSearchParams({
+								code: params.code,
+								client_id: clientId,
+								client_secret: clientSecret,
+								redirect_uri: 'http://localhost:8000/get-refresh-token.html',
+								grant_type: 'authorization_code',
+							}).toString(),
+						});
+
+						const tokenData = await tokenResponse.json();
+
+						if (tokenData.error) {
+							alert(`Error: ${tokenData.error}\n${tokenData.error_description || ''}`);
+							return;
+						}
+
+						// Display the results
+						document.getElementById('setup-form').style.display = 'none';
+						document.getElementById('result').style.display = 'block';
+
+						document.getElementById('result-client-id').textContent = clientId;
+						document.getElementById('result-client-secret').textContent = clientSecret;
+						document.getElementById('result-refresh-token').textContent = tokenData.refresh_token;
+
+						// Create the .dev.vars content
+						const devVarsContent = `GOOGLE_CLIENT_ID="${clientId}"
+GOOGLE_CLIENT_SECRET="${clientSecret}"
+GOOGLE_REFRESH_TOKEN="${tokenData.refresh_token}"`;
+
+						document.getElementById('dev-vars-content').textContent = devVarsContent;
+
+						// Clear localStorage
+						localStorage.removeItem('clientId');
+						localStorage.removeItem('clientSecret');
+
+						// Remove the code from the URL
+						window.history.replaceState({}, document.title, window.location.pathname);
+					} catch (error) {
+						console.error('Error exchanging code for tokens:', error);
+						alert('Error exchanging authorization code for tokens. See console for details.');
+					}
+				}
+			});
+		</script>
+	</body>
+</html>
