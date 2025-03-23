@@ -15,49 +15,55 @@ export default {
 	async scheduled(event, env, ctx): Promise<void> {
 		console.log(`Sync triggered at ${event.cron}`);
 
-		try {
-			// Initialize Firebase
-			const firebaseConfig = {
-				apiKey: env.FIREBASE_APIKEY,
-				authDomain: env.FIREBASE_AUTHDOMAIN,
-				projectId: env.FIREBASE_PROJECTID,
-				storageBucket: env.FIREBASE_STORAGEBUCKET,
-				messagingSenderId: env.FIREBASE_MESSAGINGSENDERID,
-				appId: env.FIREBASE_APPID,
-			};
+		// Create a main promise that encompasses all the work
+		const mainProcess = async () => {
+			try {
+				// Initialize Firebase
+				const firebaseConfig = {
+					apiKey: env.FIREBASE_APIKEY,
+					authDomain: env.FIREBASE_AUTHDOMAIN,
+					projectId: env.FIREBASE_PROJECTID,
+					storageBucket: env.FIREBASE_STORAGEBUCKET,
+					messagingSenderId: env.FIREBASE_MESSAGINGSENDERID,
+					appId: env.FIREBASE_APPID,
+				};
 
-			const app = initializeApp(firebaseConfig);
-			const db = getFirestore(app);
+				const app = initializeApp(firebaseConfig);
+				const db = getFirestore(app);
 
-			// Public iCal URL - this could be stored in environment variables or Firestore
-			// For now, we'll hardcode it for demonstration
-			const icalUrl = 'https://www.kth.se/social/user/x/icalendar/x';
+				// Public iCal URL - this could be stored in environment variables or Firestore
+				const icalUrl = env.ICAL_URL;
 
-			// Fetch and parse iCal events
-			const icalEvents = await fetchIcalEvents(icalUrl);
-			console.log(`Fetched ${Object.keys(icalEvents).length} events from iCal`);
+				// Fetch and parse iCal events
+				const icalEvents = await fetchIcalEvents(icalUrl);
+				console.log(`Fetched ${Object.keys(icalEvents).length} events from iCal`);
 
-			// Get existing events from Firestore
-			const existingEvents = await getExistingEvents(db);
-			console.log(`Found ${existingEvents.length} existing events in Firestore`);
+				// Get existing events from Firestore
+				const existingEvents = await getExistingEvents(db);
+				console.log(`Found ${existingEvents.length} existing events in Firestore`);
 
-			// Find new events
-			const newEvents = findNewEvents(icalEvents, existingEvents);
-			console.log(`Found ${newEvents.length} new events to sync`);
+				// Find new events
+				const newEvents = findNewEvents(icalEvents, existingEvents);
+				console.log(`Found ${newEvents.length} new events to sync`);
 
-			if (newEvents.length > 0) {
-				// Add new events to Google Calendar
-				for (const event of newEvents) {
-					await addEventToGoogleCalendar(event, env);
-					await storeEventInFirestore(db, event);
+				if (newEvents.length > 0) {
+					// Add new events to Google Calendar
+					// Process events serially to avoid race conditions
+					for (const event of newEvents) {
+						await addEventToGoogleCalendar(event, env);
+						await storeEventInFirestore(db, event);
+					}
+					console.log(`Successfully synced ${newEvents.length} events to Google Calendar`);
+				} else {
+					console.log('No new events to sync');
 				}
-				console.log(`Successfully synced ${newEvents.length} events to Google Calendar`);
-			} else {
-				console.log('No new events to sync');
+			} catch (error) {
+				console.error('Error syncing calendars:', error);
 			}
-		} catch (error) {
-			console.error('Error syncing calendars:', error);
-		}
+		};
+
+		// Use waitUntil to ensure the promise is properly handled
+		ctx.waitUntil(mainProcess());
 	},
 } satisfies ExportedHandler<Env>;
 
@@ -159,7 +165,7 @@ async function getAccessToken(env: Env): Promise<string> {
  * Adds an event to Google Calendar using the Calendar API
  */
 async function addEventToGoogleCalendar(event: CalendarEvent, env: Env): Promise<void> {
-	const calendarId = env.CALENDAR_ID;
+	const calendarId = env.GOOGLE_CALENDAR_ID;
 
 	// Get access token using refresh token
 	const accessToken = await getAccessToken(env);
